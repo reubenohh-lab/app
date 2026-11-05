@@ -1,5 +1,6 @@
 import {lessons} from './curriculum.js';
 import {freshProgress,loadProgress,dayKey,award,streak} from './progress.js';
+import {createSpeaker} from './speech.js';
 
 const $=s=>document.querySelector(s);
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -82,16 +83,12 @@ function renderProgress() {
   shell(`${heading('EVERY LITTLE STEP COUNTS','Look how far you’re going.','Your progress is saved in this browser. Take a backup if you’re switching devices.')}<div class="progress-grid"><section class="metric"><span>✧</span><strong>${progress.xp}</strong><p>Total XP</p></section><section class="metric"><span>♨</span><strong>${streak(progress)}</strong><p>Day streak</p></section><section class="metric"><span>◈</span><strong>${Object.keys(progress.completed).filter(id=>lessons.some(l=>l.id===id)).length}</strong><p>Lessons completed</p></section></div><div class="progress-layout"><section class="panel"><h2>Your week in little steps</h2><div class="week-chart">${days.map(d=>`<div><small>${d.xp} XP</small><div class="bar-track"><i style="height:${Math.max(3,Math.min(d.xp/Math.max(progress.goal,...days.map(d=>d.xp))*100,100))}%"></i></div><span>${d.label}</span></div>`).join('')}</div><p class="muted">Earn any XP to keep a streak. Your daily XP goal is a separate personal target. Dates follow your device’s local time.</p></section><section class="panel"><span class="eyebrow">MAKE ROOM FOR A LITTLE SPANISH</span><h2>Your daily goal</h2><div class="goal-choices">${[[15,'A little hello'],[30,'A daily moment'],[50,'A bigger adventure']].map(([n,l])=>`<button data-goal="${n}" class="${progress.goal===n?'active':''}" aria-pressed="${progress.goal===n}"><b>${n} XP</b><span>${l}</span></button>`).join('')}</div><p>${todayXP()} of ${progress.goal} XP today ${todayXP()>=progress.goal?'· Goal complete ✓':''}</p></section></div><section class="panel backup"><div><h3>Keep your journey close</h3><p>No account or cloud sync. Export a backup to move your progress to another browser or phone.${storageWarning?' Saving is currently unavailable in this browser.':''}</p></div><button class="secondary" data-export>Export progress ↓</button><label class="secondary import-label">Import backup ↑<input type="file" id="import" accept="application/json,.json"></label></section>`);
 }
 let gradingToken='',audioGeneration=0;
-async function speak(text) {
-  if(!('speechSynthesis' in window))return toast('Spoken examples are not supported by this browser. Try Safari or Chrome.');
-  speechSynthesis.cancel();
-  let voices=speechSynthesis.getVoices();
-  if(!voices.length){await new Promise(r=>setTimeout(r,200));voices=speechSynthesis.getVoices();}
-  const voice=voices.find(v=>/^es[-_]MX/i.test(v.lang))||voices.find(v=>/^es[-_](US|CO|AR)/i.test(v.lang))||voices.find(v=>/^es/i.test(v.lang));
-  if(!voice)return toast('No Spanish voice is installed. Enable a Spanish text-to-speech voice in your device settings.');
-  const utterance=new SpeechSynthesisUtterance(text);utterance.lang='es-MX';utterance.voice=voice;utterance.rate=$('#slow')?.checked?0.65:0.88;
-  utterance.onerror=e=>{if(e.error!=='interrupted'&&e.error!=='canceled')toast('Could not play the example. Check your device’s speech settings.');};speechSynthesis.speak(utterance);
-}
+const speaker=createSpeaker({synthesis:window.speechSynthesis,Utterance:window.SpeechSynthesisUtterance,
+  onError:code=>toast(code==='unsupported'?'Spoken examples need Safari or Chrome.':code==='language-unavailable'||code==='voice-unavailable'?'Enable a Spanish voice in your phone’s speech settings, then try again.':'Playback did not start. Turn up your media volume, check Silent Mode or Bluetooth headphones, and tap Listen again.'),
+  onState:state=>{document.querySelectorAll('[data-speak]').forEach(button=>{button.classList.toggle('speaking',state==='playing'&&button.dataset.speak===speakingText);button.setAttribute('aria-busy',String(state==='loading'&&button.dataset.speak===speakingText));});}
+});
+let speakingText='';
+function speak(text) {speakingText=text;speaker.play(text,{slow:Boolean($('#slow')?.checked)});}
 function clearAudio() {audioGeneration++;if(blobUrl)URL.revokeObjectURL(blobUrl);blobUrl=null;blob=null;assessment=null;}
 function stopRecording() {clearTimeout(recordTimer);if(recorder?.state==='recording')recorder.stop();stream?.getTracks().forEach(t=>t.stop());recording=false;}
 async function record() {
@@ -100,7 +97,7 @@ async function record() {
   if(!navigator.mediaDevices?.getUserMedia||!window.MediaRecorder)return toast('Recording needs HTTPS and a supported browser such as Safari or Chrome.');
   try {
     busy=true;renderVoice();
-    window.speechSynthesis?.cancel();
+    speaker.stop();
     stream=await navigator.mediaDevices.getUserMedia({audio:{channelCount:1,echoCancellation:true}});
     if(page!=='voice'){stream.getTracks().forEach(t=>t.stop());busy=false;return;}
     clearAudio();const generation=audioGeneration;const context=new AudioContext();audioContext=context;await context.resume();
@@ -135,7 +132,7 @@ async function assess() {
 }
 function navigate(destination) {
   if(recording)stopRecording();
-  window.speechSynthesis?.cancel();page=destination;render();window.scrollTo(0,0);
+  speaker.stop();page=destination;render();window.scrollTo(0,0);
 }
 app.addEventListener('click',async e=>{
   const b=e.target.closest('button, a.brand');if(!b||b.disabled)return;
@@ -166,6 +163,6 @@ app.addEventListener('change',async e=>{
     try{const data=JSON.parse(await file.text());if(data.version!==1||!data.progress||!Number.isFinite(data.progress.xp))throw Error();const restored=loadProgress(JSON.stringify(data.progress),null);if(!restored)throw Error();if(restored.lastLesson&&!lessons.some(l=>l.id===restored.lastLesson.id))restored.lastLesson=null;if(!confirm('Replace the progress on this device with this backup?'))return;progress=restored;save();renderProgress();toast('Your journey is restored.');}catch{toast('This is not a valid Brisa progress backup.');}
   }
 });
-window.addEventListener('pagehide',()=>{stopRecording();window.speechSynthesis?.cancel();});
+window.addEventListener('pagehide',()=>{stopRecording();speaker.stop();});
 render();
 fetch('/api/health').then(r=>r.json()).then(data=>{assessmentEnabled=data.assessmentEnabled;if(page==='voice')renderVoice();}).catch(()=>{});

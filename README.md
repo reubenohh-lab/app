@@ -24,7 +24,7 @@ The server listens on port 3000, or `PORT`. `GET /api/health` checks readiness. 
 
 Progress is stored in this browser's localStorage, not an account. Changing domain, using private browsing, clearing browser data, or switching devices does not carry progress over. Export a backup from **Your progress** before switching. Recordings are temporary and disappear on reload. This first version uses guided dialogues rather than open-ended AI conversations. It is not an offline app; the home screen manifest provides standalone launch presentation only.
 
-Examples use available device Spanish voices, preferring `es-MX`, then other Latin American variants. If no Spanish voice is installed, the app explains how to enable one. Device voices may require network access. Language is beginner Latin American Spanish with Mexico-oriented travel vocabulary; regional variations are noted where useful.
+Examples use available device Spanish voices, preferring `es-MX`, then other Latin American variants. Speech is dispatched directly in the tap event, including when Safari's voice list is still empty; the engine can resolve the Spanish language as it loads. Paused engines are resumed, and startup failures show a playback message. If the device reports that a Spanish voice is unavailable, the app explains how to enable one. Device voices may require network access. Language is beginner Latin American Spanish with Mexico-oriented travel vocabulary; regional variations are noted where useful.
 
 ## Deploy to Render and use on your phone
 
