@@ -2,6 +2,8 @@ import {test,before,after} from 'node:test';
 import assert from 'node:assert/strict';
 import {freshProgress,award,streak,loadProgress,dayKey} from '../public/progress.js';
 import {lessons} from '../public/curriculum.js';
+import {audioClips} from '../public/audio-catalog.js';
+import {stat} from 'node:fs/promises';
 import {server} from '../server.js';
 let base;
 before(async()=>{await new Promise(r=>server.listen(0,'127.0.0.1',r));base=`http://127.0.0.1:${server.address().port}`;});
@@ -19,6 +21,19 @@ test('invalid backups are rejected and untrusted resume data is discarded',()=>{
 test('every lesson has four answerable quizzes, vocabulary and a two-sided conversation',()=>{
   assert.equal(lessons.length,8);assert.equal(new Set(lessons.map(l=>l.id)).size,8);
   for(const l of lessons){assert.equal(l.items.length,4);for(const item of l.items){assert.equal(item.choices.filter(c=>c===item.en).length,1);assert.ok(item.es.length>5);}assert.ok(l.words.length>=4);assert.ok(l.dialogue.some(d=>d[0]==='host'));assert.ok(l.dialogue.some(d=>d[0]==='you'));}
+});
+test('every lesson, vocabulary word, and dialogue line has a bundled audio asset',async()=>{
+  const phrases=new Set(lessons.flatMap(l=>[...l.items.map(i=>i.es),...l.words.map(w=>w[0]),...l.dialogue.map(d=>d[1])]));
+  assert.equal(Object.keys(audioClips).length,phrases.size);
+  for(const phrase of phrases){const clip=audioClips[phrase];assert.match(clip,/^\/audio\/[a-f0-9]{16}\.mp3$/);assert.ok((await stat(new URL('../public'+clip,import.meta.url))).size>1000,phrase);}
+});
+test('audio streams use the MIME type and byte ranges needed by Safari',async()=>{
+  const url=base+audioClips['Mucho gusto. ¿Y tú?'];
+  const full=await fetch(url);assert.equal(full.status,200);assert.equal(full.headers.get('content-type'),'audio/mpeg');const bytes=new Uint8Array(await full.arrayBuffer());
+  const partial=await fetch(url,{headers:{Range:'bytes=0-1'}});assert.equal(partial.status,206);assert.equal(partial.headers.get('accept-ranges'),'bytes');assert.equal(partial.headers.get('content-range'),`bytes 0-1/${bytes.length}`);assert.deepEqual(new Uint8Array(await partial.arrayBuffer()),bytes.slice(0,2));
+  const suffix=await fetch(url,{headers:{Range:'bytes=-10'}});assert.equal(suffix.status,206);assert.deepEqual(new Uint8Array(await suffix.arrayBuffer()),bytes.slice(-10));
+  assert.equal((await fetch(url,{headers:{Range:'bytes=999999999-'}})).status,416);
+  const head=await fetch(url,{method:'HEAD'});assert.equal(Number(head.headers.get('content-length')),bytes.length);assert.equal((await head.arrayBuffer()).byteLength,0);
 });
 test('server serves application assets and reports grading disabled without keys',async()=>{
   const r=await fetch(base);assert.equal(r.status,200);assert.match(await r.text(),/Brisa/);

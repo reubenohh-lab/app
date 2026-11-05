@@ -5,7 +5,7 @@ import path from 'node:path';
 import { timingSafeEqual } from 'node:crypto';
 
 const root = path.resolve(fileURLToPath(new URL('./public/', import.meta.url)));
-const types = { '.html':'text/html; charset=utf-8', '.js':'text/javascript', '.css':'text/css', '.svg':'image/svg+xml', '.webmanifest':'application/manifest+json' };
+const types = { '.html':'text/html; charset=utf-8', '.js':'text/javascript', '.css':'text/css', '.svg':'image/svg+xml', '.webmanifest':'application/manifest+json', '.mp3':'audio/mpeg' };
 const enabled = () => Boolean(process.env.AZURE_SPEECH_KEY && /^[a-z0-9-]+$/.test(process.env.AZURE_SPEECH_REGION || '') && process.env.ASSESSMENT_ACCESS_TOKEN);
 const limits = new Map();
 const json = (res,status,data) => {res.writeHead(status, {'Content-Type':'application/json','Cache-Control':'no-store'});res.end(JSON.stringify(data));};
@@ -47,7 +47,24 @@ export const server = http.createServer(async (req,res) => {
     const file=path.resolve(root, '.'+decodeURIComponent(url.pathname==='/'?'/index.html':url.pathname));
     if(!file.startsWith(root+path.sep)) return json(res,403,{error:'Forbidden'});
     const body=await readFile(file);
-    res.writeHead(200,{'Content-Type':types[path.extname(file)]||'application/octet-stream','Cache-Control':'no-cache'});
+    const isAudio=path.extname(file)==='.mp3';
+    const headers={'Content-Type':types[path.extname(file)]||'application/octet-stream','Cache-Control':isAudio?'public, max-age=31536000, immutable':'no-cache','Content-Length':body.length};
+    if(isAudio) {
+      headers['Accept-Ranges']='bytes';
+      if(req.headers.range) {
+        const range=/^bytes=(\d*)-(\d*)$/.exec(req.headers.range);
+        let start=range?.[1]?Number(range[1]):0;
+        let end=range?.[2]?Number(range[2]):body.length-1;
+        if(range&&!range[1]&&range[2]){start=Math.max(0,body.length-Number(range[2]));end=body.length-1;}
+        if(!range||(!range[1]&&!range[2])||!Number.isSafeInteger(start)||!Number.isSafeInteger(end)||start<0||start>=body.length||end<start) {
+          res.writeHead(416,{'Content-Range':`bytes */${body.length}`});return res.end();
+        }
+        end=Math.min(end,body.length-1);
+        res.writeHead(206,{...headers,'Content-Range':`bytes ${start}-${end}/${body.length}`,'Content-Length':end-start+1});
+        return res.end(req.method==='HEAD'?undefined:body.subarray(start,end+1));
+      }
+    }
+    res.writeHead(200,headers);
     res.end(req.method==='HEAD'?undefined:body);
   } catch(error) {json(res,error.code==='ENOENT'?404:500,{error:error.code==='ENOENT'?'Not found':'Request failed. Please try again.'});}
 });

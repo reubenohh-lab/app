@@ -17,18 +17,22 @@ The server listens on port 3000, or `PORT`. `GET /api/health` checks readiness. 
 ## What works
 
 - Eight short lessons, including introductions, small talk, cafés, directions, invitations, hotels, asking for help, and an optional business lesson. Every lesson is accessible immediately.
-- Translation and listening quizzes, answer explanations, browser text-to-speech examples, and guided spoken role-plays with suggested replies.
+- Translation and listening quizzes, answer explanations, bundled spoken audio examples, and guided spoken role-plays with suggested replies.
 - Vocabulary flashcards, daily XP targets, local-calendar streaks, saved lesson position, and progress export/import. First-time lesson completion gives 20 XP plus 5 per correct quiz answer; revisits give 10 XP. Each vocabulary phrase awards 2 XP once.
 - Microphone recording, replay, and conversion to 16 kHz mono PCM WAV, capped at 30 seconds. Recording needs HTTPS (or localhost) and browser microphone permission.
 - Optional, server-side Azure Speech Pronunciation Assessment integration, disabled without configuration. Reports service-provided overall, accuracy, fluency, completeness, and available word/phoneme feedback. No fabricated grading or speech-to-text similarity scores.
 
 Progress is stored in this browser's localStorage, not an account. Changing domain, using private browsing, clearing browser data, or switching devices does not carry progress over. Export a backup from **Your progress** before switching. Recordings are temporary and disappear on reload. This first version uses guided dialogues rather than open-ended AI conversations. It is not an offline app; the home screen manifest provides standalone launch presentation only.
 
-Examples use available device Spanish voices, preferring `es-MX`, then other Latin American variants. Speech is dispatched directly in the tap event, including when Safari's voice list is still empty; the engine can resolve the Spanish language as it loads. Paused engines are resumed, and startup failures show a playback message. If the device reports that a Spanish voice is unavailable, the app explains how to enable one. Device voices may require network access. Language is beginner Latin American Spanish with Mexico-oriented travel vocabulary; regional variations are noted where useful.
+Examples play bundled MP3 files through standard HTML audio, including native playback controls. Safari does not need an installed Spanish voice or Web Speech support. The server supplies audio/mpeg, content lengths, and byte-range responses for iPhone playback and seeking. A compact player appears when you tap a Listen button; you can replay, pause, or close it. The listening quiz player does not reveal the hidden transcript.
+
+All 95 Spanish examples were generated offline using the open-source Kokoro v1.0 model, Spanish voice `ef_dora`, and the `es-419` Latin American Spanish phonemizer. They are synthetic speech, not human recordings. No speech API is called and no API key is needed for example playback. Only the small generated MP3 files are deployed, not the model or generation tools. Curriculum and vocabulary remain oriented toward beginner Latin American Spanish; synthetic accents are not a reference for every regional accent.
+
+Audio regeneration is optional and is never part of Render's build. `scripts/generate-audio.py` needs Python, `kokoro-onnx==0.4.9`, `soundfile`, ffmpeg, and the `kokoro-v1.0.onnx` / `voices-v1.0.bin` files from the official release linked in `public/audio/README.md`. Run it with the model directory as its argument; it reads the curriculum, reuses existing clips, and writes the complete catalog. Models and tools should stay outside the checkout.
 
 ## Deploy to Render and use on your phone
 
-No Render account is connected to this workspace, so deployment is prepared but has not been published. You control the hosting account and billing selection.
+Hosting is managed in your Render account; this workspace has no access to its dashboard. A connected service can redeploy when changes are pushed to its configured GitHub branch. You control the hosting account and billing selection.
 
 1. Commit and push the application files to your GitHub repository. Keep `.env` and credentials out of Git. Include `public/`, `server.js`, `package.json`, `package-lock.json`, and `render.yaml` (and preferably the README and tests).
 2. Sign in at [Render](https://dashboard.render.com/), connect the GitHub repository, and choose **New → Blueprint**, selecting the branch containing these files. The included `render.yaml` defines a Node web service. Alternatively choose **New → Web Service**, set build command `npm ci --omit=dev`, start command `npm start`, and health check `/api/health`.
@@ -69,6 +73,6 @@ npm test
 npm run test:browser
 ```
 
-Unit/integration checks cover XP, streaks, saved-progress validation, curriculum consistency, static serving, and the protected Azure proxy using a mock upstream. Browser checks cover completing and resuming lessons, corrections, skip-ahead, word review, microphone recording/replay using Chromium's synthetic microphone, and overflow at 360, 390, 768, and 1440 px. They do not replace testing a physical iPhone/Android microphone or a real Azure subscription.
+Unit/integration checks cover XP, streaks, saved-progress validation, curriculum consistency, static serving, and the protected Azure proxy using a mock upstream. Browser checks cover completing and resuming lessons, corrections, skip-ahead, word review, microphone recording/replay using Chromium's synthetic microphone, actual bundled MP3 playback with browser speech synthesis unavailable, replay, native player errors, and overflow at 360, 390, 768, and 1440 px. They do not replace testing a physical iPhone/Android microphone or a real Azure subscription.
 
 The Playwright configuration defaults to `/usr/bin/chromium` in this cloud machine. Set `CHROMIUM_PATH` to your Chrome/Chromium executable elsewhere. It uses a synthetic microphone for reproducible browser tests. No production runtime dependency on Playwright.
